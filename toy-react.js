@@ -1,14 +1,28 @@
+const RENDER_TO_DOM = Symbol('render to dom');
 class ElementWrapper {
   constructor(type) {
     this.root = document.createElement(type);
   }
 
   setAttribute(name, value) {
-    this.root.setAttribute(name, value);
+    // [\s\S] 表示所有的字符集合
+    if (name.match(/^on([\s\S]+)$/)) {
+      this.root.addEventListener(RegExp.$1.replace(/^[\s\S]/, c => c.toLowerCase()), value);
+    } else {
+      this.root.setAttribute(name, value);
+    }
   }
 
   appendChild(component) {
-    this.root.appendChild(component.root)
+    let range = document.createRange();
+    range.setStart(this.root, this.root.childNodes.length);
+    range.setEnd(this.root, this.root.childNodes.length);
+    component[RENDER_TO_DOM](range);
+  }
+
+  [RENDER_TO_DOM](range) {
+    range.deleteContents();
+    range.insertNode(this.root);
   }
 }
 
@@ -16,13 +30,17 @@ class TextWrapper {
   constructor(content) {
     this.root = document.createTextNode(content);
   }
+  [RENDER_TO_DOM](range) {
+    range.deleteContents();
+    range.insertNode(this.root);
+  }
 }
 
 export class Component {
   constructor() {
     this.props = Object.create(null);
     this.children = [];
-    this._root = null;
+    this._range = null;
   }
 
   setAttribute(name, value) {
@@ -33,12 +51,34 @@ export class Component {
     this.children.push(component);
   }
 
-  get root() {
-    if (!this._root) {
-      // 如果我们 render 出来的仍然是一个 Component，那么这个地方就会发生一次递归，直到得到一个 ElementWrapper 或 TextWrapper 为根节点的 Component。
-      this._root = this.render().root;
+  [RENDER_TO_DOM](range) {
+    this._range = range;
+    this.render()[RENDER_TO_DOM](range);
+  }
+
+  rerender() {
+    this._range.deleteContents();
+    this[RENDER_TO_DOM](this._range);
+  }
+
+  setState(newState) {
+    // 注意：typeof null得到'object'，所以一定要分开判断
+    if (this.state === null || typeof this.state !== 'object') {
+      this.state = newState;
+      this.rerender();
+      return;
     }
-    return this._root;
+    let merge = (oldState, newState) => {
+      for (const p in newState) {
+        if (oldState[p] === null || typeof oldState[p] !== 'object') {
+          oldState[p] = newState[p];
+        } else {
+          merge(oldState, newState);
+        }
+      }
+    };
+    merge(this.state, newState);
+    this.rerender();
   }
 }
 
@@ -70,5 +110,9 @@ export function createElement(type, attributes, ...children) {
 }
 
 export function render(component, parentElement) {
-  parentElement.appendChild(component.root);
+  let range = document.createRange();
+  range.setStart(parentElement, 0);
+  range.setEnd(parentElement, parentElement.childNodes.length);
+  range.deleteContents();
+  component[RENDER_TO_DOM](range);
 }

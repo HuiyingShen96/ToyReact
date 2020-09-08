@@ -1,12 +1,24 @@
 import { createElement, Component, render } from './toy-react';
 
 class MyComponent extends Component {
+  constructor() {
+    super();
+    this.state = {
+      a: 1,
+      b: 2,
+    };
+  }
+
   render() {
     return <div>
       <h1>my component</h1>
-      {this.children}
+      <button onclick={() => { this.setState({ a: this.state.a + 1 }) }}>add</button>
+      <span>{this.state.a.toString()}</span>
+      <span>{this.state.b.toString()}</span>
     </div>;
   }
 }
 
-render(<MyComponent id="test" class="class1">text1<span class="class2">text2</span></MyComponent>, document.body);
+render(<MyComponent id="a" class="b">
+  <div class="c">abc</div>
+</MyComponent>, document.body);
