@@ -84,7 +84,7 @@ export class Component {
         if (oldState[p] === null || typeof oldState[p] !== 'object') {
           oldState[p] = newState[p];
         } else {
-          merge(oldState, newState);
+          merge(oldState[p], newState[p]);
         }
       }
     };
