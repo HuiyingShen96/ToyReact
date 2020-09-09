@@ -1,5 +1,13 @@
 const RENDER_TO_DOM = Symbol('render to dom');
 
+function replaceContent(range, node) {
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.deleteContents();
+
+  range.setStartBefore(node);
+  range.setEndAfter(node);
+}
 
 export class Component {
   constructor() {
@@ -12,10 +20,6 @@ export class Component {
     return this.render().vdom;
   }
 
-  get vchildren() {
-    return this.children.map(child => child.vdom);
-  }
-
   setAttribute(name, value) {
     this.props[name] = value;
   }
@@ -26,26 +30,73 @@ export class Component {
 
   [RENDER_TO_DOM](range) {
     this._range = range;
-    this.render()[RENDER_TO_DOM](range);
+    // 这里调用了获取this.vdom的getter，会得到一个新的vdom树
+    this._vdom = this.vdom;
+    this._vdom[RENDER_TO_DOM](range);
   }
 
-  rerender() {
-    const oldRange = this._range;
+  /**
+   * 对比新旧vdom，找出要重新渲染的位置
+   */
+  update() {
+    const isSameNode = (oldNode, newNode) => {
+      // 类型不同
+      if (oldNode.type !== newNode.type) return false;
 
-    const range = document.createRange();
-    range.setStart(oldRange.startContainer, oldRange.startOffset);
-    range.setEnd(oldRange.startContainer, oldRange.startOffset);
-    this[RENDER_TO_DOM](range);
+      // 属性不同
+      for (const name in newNode.props) {
+        if (oldNode.props[name] !== newNode.props[name]) return false;
+      }
 
-    oldRange.setStart(range.endContainer, range.endOffset);
-    oldRange.deleteContents();
+      // 属性的数量不同
+      if (Object.keys(oldNode.props).length > Object.keys(newNode.props).length) return false;
+
+      // 文本内容不同
+      if (newNode.type === '#text' && newNode.content !== oldNode.content) return false;
+
+      return true;
+    };
+
+    const update = (oldNode, newNode) => {
+      if (!isSameNode(oldNode, newNode)) {
+        newNode[RENDER_TO_DOM](oldNode._range);
+        return;
+      }
+      newNode._range = oldNode._range;
+
+      const newChildren = newNode.vchildren;
+      const oldChildren = oldNode.vchildren;
+
+      if (!newChildren || !newChildren.length) return;
+
+      let tailRange = oldChildren[oldChildren.length - 1]._range;
+
+      for (let i = 0; i < newChildren.length; i++) {
+        const newChild = newChildren[i];
+        const oldChild = oldChildren[i];
+        if (i < oldChildren.length) {
+          update(oldChild, newChild);
+        } else {
+          // 插入节点
+          const range = document.createRange();
+          range.setStart(tailRange.endContainer, tailRange.endOffset);
+          range.setEnd(tailRange.endContainer, tailRange.endOffset);
+          newChild[RENDER_TO_DOM](range);
+          tailRange = range;
+        }
+      }
+    };
+
+    const vdom = this.vdom;
+    update(this._vdom, vdom);
+    this._vdom = vdom;
   }
 
   setState(newState) {
     // 注意：typeof null得到'object'，所以一定要分开判断
     if (this.state === null || typeof this.state !== 'object') {
       this.state = newState;
-      this.rerender();
+      this.update();
       return;
     }
     let merge = (oldState, newState) => {
@@ -58,7 +109,7 @@ export class Component {
       }
     };
     merge(this.state, newState);
-    this.rerender();
+    this.update();
   }
 }
 
@@ -69,16 +120,12 @@ class ElementWrapper extends Component {
   }
 
   get vdom() {
+    this.vchildren = this.children.map(child => child.vdom);
     return this;
-    // return {
-    //   type: this.type,
-    //   props: this.props,
-    //   children: this.children.map(child => child.vdom)
-    // }
   }
 
   [RENDER_TO_DOM](range) {
-    range.deleteContents();
+    this._range = range;
 
     const root = document.createElement(this.type);
 
@@ -95,14 +142,18 @@ class ElementWrapper extends Component {
       }
     }
 
-    for (const child of this.children) {
+    if (!this.vchildren) {
+      this.vchildren = this.children.map(child => child.vdom);
+    }
+
+    for (const child of this.vchildren) {
       let childRange = document.createRange();
       childRange.setStart(root, root.childNodes.length);
       childRange.setEnd(root, root.childNodes.length);
       child[RENDER_TO_DOM](childRange);
     }
 
-    range.insertNode(root);
+    replaceContent(range, root);
   }
 }
 
@@ -111,20 +162,16 @@ class TextWrapper extends Component {
     super(content);
     this.content = content;
     this.type = '#text';
-    this.root = document.createTextNode(content);
   }
 
   get vdom() {
     return this;
-    // return {
-    //   type: '#text',
-    //   content: this.content,
-    // }
   }
 
   [RENDER_TO_DOM](range) {
-    range.deleteContents();
-    range.insertNode(this.root);
+    this._range = range;
+    const root = document.createTextNode(this.content);
+    replaceContent(range, root);
   }
 }
 
