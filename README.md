@@ -169,3 +169,27 @@ const b = <Div></Div>;
 var a = createElement("div", null);
 var b = createElement(Div, null); // 报错 Uncaught ReferenceError: Div is not defined
 ```
+
+# 支持State
+
+## 组件数据是怎样进行更新的
+
+render()中取root的过程就是一个真实的渲染过程。
+
+## 基于Range的DOM绘制
+
+加入重新绘制和渲染的能力
+
+实现setState
+
+完成基本功能。尝试把react的Tutorials里面的demo 跑起来。
+
+
+
+# 虚拟DOM的原理和关键实现
+
+实现虚拟dom树的构建
+
+从vdom生成真实的dom
+
+vdom比对
